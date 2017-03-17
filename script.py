@@ -8,15 +8,18 @@ CONN = None
 
 def get_units():
     cursor = CONN.cursor()
-    cursor.execute("SELCT IDjednotka, nazev, plural, genitiv FROM jednotky")
-    data = curos.fetchall()
-    units_primary = {nazev: id for (id, nazvy*) in data for nazev in nazvy if nazev}
+    cursor.execute("SELECT jednotkaID, nazev, plural, genitiv FROM jednotky")
+    data = cursor.fetchall()
+    units_primary = {nazev: id for (id, *nazvy) in data for nazev in nazvy if nazev}
 
-    cursor.execute("SELECT IDjednotka, nazev FROM alternativni_jednotky")
-    data = curosr.fetchall()
+    cursor.execute("SELECT jednotkaID, nazev FROM alternativni_jednotky")
+    data = cursor.fetchall()
     units_secondary = {nazev: id for (id, nazev) in data}
 
     return {k: v for d in (units_primary, units_secondary) for k, v in d.items()}
+
+def create_unit(unit):
+    pass
 
 def resolve_unit(unit):
     units = get_units()
@@ -27,21 +30,34 @@ def resolve_unit(unit):
     print("Unit", unit, "not foud, did you mean...")
     for altertative in alternatives:
         satisfied = False
-        while not satisfied
-            response = input("..." + alternative + "? [y/n/q]")
-            response.lower()
+        while not satisfied:
+            response = input("..." + alternative + "? [y/n/q] ").lower()
             if response not in ['y', 'n', 'q']:
                 print("Sorry, I did not understand your answer, could you please repeat it?")
             else:
                 satisfied = True
         if response == 'y':
             return units[alternative]
+        elif response == 'q':
+            break
+
+    satisfied = False
+    while not satisfied:
+        response = input("Would you like to create new unit or skip [c/s] ").lower()
+        if response not in ['c', 's']:
+            print("Sorry, I did not understand your answer, could you please repeat it?")
+        else:
+            satisfied = True
+
+    if response == 'c':
+        return create_unit()
+    return None
 
 
 def add_recipe():
     while True:
         try:
-            (count, unit, name*) = raw_inp = input()
+            (count, unit, *name) = raw_inp = shlex.split(input())
             if not name:
                 raise ValueError
         except ValueError:
@@ -49,6 +65,10 @@ def add_recipe():
             continue
         count = float(count)
         name = ' '.join(name)
+
+        print(count)
+        print(unit)
+        print(name)
 
         unit = resolve_unit(unit)
 
