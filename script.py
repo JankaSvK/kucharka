@@ -128,31 +128,42 @@ def check_conversion(unit, material):
 def add_recipe():
     try:
         recipe_name = input("Název receptu: ")
-        ration_count = int(input("Počet porcí: "))
+
+        msg = "Počet porcí: "
+        while True:
+            try:
+                ration_count = int(input(msg))
+                break
+            except ValueError:
+                msg = PLEASE_REPEAT
+
+        print("Nyní zadejte seznam potřebných surovin, výčet ukončete prázným řádkem")
+        while True:
+            try:
+                (count, unit, *name) = raw_inp = shlex.split(input())
+                if not name:
+                    raise ValueError
+                count = float(count)
+            except ValueError:
+                print("Špatný vstup ", raw_inp, ", přeskakuji...")
+                continue
+            name = ' '.join(name)
+
+            unit = resolve_unit(unit)
+            if unit is None:
+                continue
+
+            name = resolve_material(name)
+            if material is None:
+                continue
+
+            if not check_conversion(unit, material):
+                continue
+
     except EOFError:
+        print()
+        print("Ukončuji...")
         return
-
-    while True:
-        try:
-            (count, unit, *name) = raw_inp = shlex.split(input())
-            if not name:
-                raise ValueError
-            count = float(count)
-        except ValueError:
-            print("Špatný vstup ", raw_inp, ", přeskakuji...")
-            continue
-        name = ' '.join(name)
-
-        unit = resolve_unit(unit)
-        if unit is None:
-            continue
-
-        name = resolve_material(name)
-        if material is None:
-            continue
-
-        if not check_conversion(unit, material):
-            continue
 
 if __name__ == "__main__":
 
