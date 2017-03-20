@@ -4,18 +4,21 @@ CREATE TABLE "recepty" (
 	"postup" TEXT DEFAULT NULL
 );
 
-CREATE TABLE "suroviny" (
-	"surovinaID" INTEGER PRIMARY KEY AUTOINCREMENT,
-	"nazev" TEXT NOT NULL,
-	"genitiv" TEXT DEFAULT NULL
-);
-
 CREATE TABLE "jednotky" (
 	"jednotkaID" INTEGER PRIMARY KEY AUTOINCREMENT,
 	"nazev" TEXT NOT NULL,
 	"plural" TEXT DEFAULT NULL,
 	"genitiv" DEFAULT NULL,
 	"presna" BOOLEAN NOT NULL DEFAULT 1
+);
+
+CREATE TABLE "suroviny" (
+	"surovinaID" INTEGER PRIMARY KEY AUTOINCREMENT,
+	"jednotkaID" INTEGER NOT NULL,
+	"nazev" TEXT NOT NULL,
+	"genitiv" TEXT DEFAULT NULL,
+
+	FOREIGN KEY("jednotkaID") REFERENCES "jednotky"("jednotkaID")
 );
 
 CREATE TABLE "ingredience" (
