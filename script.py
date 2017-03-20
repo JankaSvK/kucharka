@@ -24,7 +24,7 @@ def get_units():
 def get_materials():
     cursor = CONN.cursor()
     cursor.execute("SELECT surovinaID, nazev, genitiv FROM suroviny")
-    data = curosr.fetchall()
+    data = cursor.fetchall()
     return {nazev: id for (id, *nazvy) in data for nazev in nazvy if nazev is not None}
 
 def create_unit():
@@ -32,24 +32,25 @@ def create_unit():
     while not name:
         name = input(PLEASE_REPEAT).strip()
 
-    genitiv = input("Zadejte prosím název jednotky v plurálu (nechte prázdné, pokud je totožný se singulárem): ").strip()
-    if not genitiv:
-        genitiv = None
-    plural = input("Zadejte prosím název jednotky v geninitivu (nechte prázdné, pokud je totožný s nominativem): ").strip()
-
+    plural = input("Zadejte prosím název jednotky v nominativu plurálu (nechte prázdné, pokud je totožný s nominativem): ").strip()
     if not plural:
         plural = None
 
+    genitiv = input("Zadejte prosím název jednotky v genitivu plurálu (nechte prázdné, pokud je totožný se singulárem): ").strip()
+    if not genitiv:
+        genitiv = None
+
+    response = None
     while response not in ['a', 'y', 'n']:
-        response = input("Je jednotka přesná? [a/n] ".strip().lower())
+        response = input("Je jednotka přesná? [a/n] ").strip().lower()
     precise = response == 'a'
 
-    curosr = CONN.cursor()
-    cursor.execute("INSERT INTO jednotky (nazev, genitiv, plural) VALUES (?, ?)", (name, genitiv, plural))
+    cursor = CONN.cursor()
+    cursor.execute("INSERT INTO jednotky (nazev, genitiv, plural) VALUES (?, ?, ?)", (name, genitiv, plural))
     return cursor.lastrowid
 
 def create_material():
-    name = input("Zadejte prosím název suroviny: ").stip()
+    name = input("Zadejte prosím název suroviny: ").strip()
     while not name:
         name = input(PLEASE_REPEAT).strip()
     genitiv = input("Zadejte prosím název suroviny v geninitivu (nechte prázdné, pokud je totožný s nominativem): ").strip()
@@ -64,22 +65,25 @@ def create_material():
     return cursor.lastrowid
 
 def resolve_string(string, strings, fallback):
-    strings = get_units()
-    if string in strings.keys():
+    if string in strings:
         return strings[string]
-    alternatives = difflib.get_close_matches(string, strings.keys(), n=5)
+    alternatives = difflib.get_close_matches(string, strings.keys(), n=10)
 
     print("Název", string, "se nepodařilo najít, mysleli jste...")
-    for altertative in alternatives:
-        response = input("..." + alternative + "? [a/n/q] ").strip().lower()
-        while response not in ['y', 'a', 'n', 'q']:
-            response = input(PLEASE_REPEAT).strip().lower()
-        if response in ['y', 'a']:
-            return units[alternative]
-        elif response == 'q':
-            break
+    if alternatives:
+        for alternative in alternatives:
+            response = input("..." + alternative + "? [a/n/q] ").strip().lower()
+            while response not in ['y', 'a', 'n', 'q']:
+                response = input(PLEASE_REPEAT).strip().lower()
+            if response in ['y', 'a']:
+                return strings[alternative]
+            elif response == 'q':
+                break
+        print("... nepodařilo se najít žádné další podobné názvy")
+    else:
+        print("... bohužel se nepodařilo najít žádný podobný název")
 
-    response = input("Chcete vytvořit novou jednotku? [a/n] ").strip().lower()
+    response = input("Chcete vytvořit nový záznam? [a/n] ").strip().lower()
     while response not in ['a', 'y', 'n']:
         reponse = input(PLEASE_REPEAT).stirp().lower()
 
@@ -95,17 +99,20 @@ def resolve_material(material):
 
 def check_conversion(unit, material):
     cursor = CONN.cursor()
-    cursor.execute("SELECT COUNT(prevodID) FROM prevody WHERE jednotkaID=? AND materialID=?", (unit, material))
+    cursor.execute("SELECT COUNT(prevodID) FROM prevody WHERE jednotkaID=? AND surovinaID=?", (unit, material))
     count = cursor.fetchone()[0]
 
     if count:
         return True
 
-    cursor.execute("SELECT genitiv FROM jednotky WHERE jednotkaID=?", (unit,))
-    unit_genitiv = cursor.fetchone()[0]
+    cursor.execute("SELECT nazev, genitiv FROM jednotky WHERE jednotkaID=?", (unit,))
+    row = cursor.fetchone()
+    unit_genitiv = row[1] if row[1] is not None else row[0]
 
-    cursor.execute("SELECT s.genitiv, j.genitiv FROM suroviny s LEFT JOIN jednotky j USING jednotkaID WHERE surovinaID=?", (material,))
-    material_genitiv, basic_unit_genitiv = cursor.fetchone()[0]
+    cursor.execute("SELECT s.nazev, s.genitiv, j.nazev, j.genitiv FROM suroviny s LEFT JOIN jednotky j USING (jednotkaID) WHERE surovinaID=?", (material,))
+    row = cursor.fetchone()
+    material_genitiv = row[1] if row[1] is not None else row[0]
+    basic_unit_genitiv = row[3] if row[3] is not None else row[2]
 
     msg = "Prosím zadejte kolik {} {} je potřeba k získání 1 {} {}): ".format(unit_genitiv, material_genitiv, basic_unit_genitiv, material_genitiv)
 
@@ -153,7 +160,7 @@ def add_recipe():
             if unit is None:
                 continue
 
-            name = resolve_material(name)
+            material = resolve_material(name)
             if material is None:
                 continue
 
@@ -174,6 +181,7 @@ if __name__ == "__main__":
 
     if len(sys.argv) > 1 and sys.argv[1] in actions:
         CONN = sqlite3.connect('databaze.db')
+        CONN.isolation_level = None
         actions[sys.argv[1]]()
     else:
         print('Invalid options: available options are:')
