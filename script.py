@@ -69,10 +69,10 @@ def create_unit():
     response = None
     while response not in ['a', 'y', 'n']:
         response = input("Je jednotka přesná? [a/n] ").strip().lower()
-    precise = response == 'a'
+    precise = response in ['a', 'y']
 
     cursor = CONN.cursor()
-    cursor.execute("INSERT INTO jednotky (nazev, genitiv, plural) VALUES (?, ?, ?)", (name, genitiv, plural))
+    cursor.execute("INSERT INTO jednotky (nazev, genitiv, plural, presna) VALUES (?, ?, ?, ?)", (name, genitiv, plural, precise))
     return cursor.lastrowid
 
 def create_material():
@@ -268,7 +268,7 @@ def find_best_unit_fit(material_id, amount, accurate):
                 or this_amount > 1 and this_amount < best_amount
             ):
             best_amount = this_amount
-            print_amount = "{0:.3g}".format(this_amount)
+            print_amount = "{0:.3f}".format(this_amount).rstrip('0').rstrip('.')
             case_amount = int(print_amount.split(".")[-1])
             if case_amount == 1:
                 best_fit = print_amount + ' ' + name
@@ -319,6 +319,8 @@ def show_recipe():
             s += '(' + inacc_fit + ') '
         s += ing_genitiv
         print(s)
+
+    print()
 
     cursor.execute("SELECT postup FROM recepty WHERE receptID=?", (recipe,))
     desc = cursor.fetchone()[0]
