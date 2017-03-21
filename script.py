@@ -20,7 +20,13 @@ def eval_expr(node):
 eval_expr.operators = {ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul,
         ast.Div: operator.truediv, ast.Pow: operator.pow, ast.USub: operator.neg}
 
-def get_units():
+def get_recipes_names_to_ids():
+    cursor = CONN.cursor()
+    cursor.execute("SELECT receptID, nazev FROM recepty")
+    data = cursor.fetchall()
+    return {nazev: id for (id, nazev) in data}
+
+def get_units_names_to_ids():
     cursor = CONN.cursor()
     cursor.execute("SELECT jednotkaID, nazev, plural, genitiv FROM jednotky")
     data = cursor.fetchall()
@@ -32,7 +38,7 @@ def get_units():
 
     return {k: v for d in (units_primary, units_secondary) for k, v in d.items()}
 
-def get_materials():
+def get_materials_names_to_ids():
     cursor = CONN.cursor()
     cursor.execute("SELECT surovinaID, nazev, genitiv FROM suroviny")
     data = cursor.fetchall()
@@ -43,7 +49,7 @@ def create_unit():
     while not name:
         name = input(PLEASE_REPEAT).strip()
 
-    existing_units = get_units()
+    existing_units = get_units_names_to_ids()
     while name in existing_units:
         response = input("Tato jednotka již existuje, chcete použít ji místo vytváření nové? [a/n] ").strip().lower()
         if response in ['a', 'y']:
@@ -74,7 +80,7 @@ def create_material():
     while not name:
         name = input(PLEASE_REPEAT).strip()
 
-    existing_materials = get_materials()
+    existing_materials = get_materials_names_to_ids()
     while name in existing_materials:
         response = input("Tato surovina již existuje, chcete použít ji místo vytváření nové? [a/n] ").strip().lower()
         if response in ['a', 'y']:
@@ -94,7 +100,7 @@ def create_material():
     cursor.execute("INSERT INTO suroviny (jednotkaID, nazev, genitiv) VALUES (?, ?, ?)", (base_unit, name, genitiv))
     return cursor.lastrowid
 
-def resolve_string(string, strings, fallback):
+def resolve_string(string, strings, fallback=None):
     if string in strings:
         return strings[string]
     alternatives = difflib.get_close_matches(string, strings.keys(), n=10)
@@ -113,19 +119,23 @@ def resolve_string(string, strings, fallback):
     else:
         print("... bohužel se nepodařilo najít žádný podobný název")
 
-    response = input("Chcete vytvořit nový záznam? [a/n] ").strip().lower()
-    while response not in ['a', 'y', 'n']:
-        reponse = input(PLEASE_REPEAT).stirp().lower()
+    if fallback:
+        response = input("Chcete vytvořit nový záznam? [a/n] ").strip().lower()
+        while response not in ['a', 'y', 'n']:
+            reponse = input(PLEASE_REPEAT).stirp().lower()
 
-    if response in ['a', 'y']:
-        return fallback()
+        if response in ['a', 'y']:
+            return fallback()
     return None
 
 def resolve_unit(unit):
-    return resolve_string(unit, get_units(), create_unit)
+    return resolve_string(unit, get_units_names_to_ids(), create_unit)
 
 def resolve_material(material):
-    return resolve_string(material, get_materials(), create_material)
+    return resolve_string(material, get_materials_names_to_ids(), create_material)
+
+def resolve_recipe(recipe):
+    return resolve_string(recipe, get_recipes_names_to_ids())
 
 def check_conversion(unit, material):
     cursor = CONN.cursor()
@@ -135,14 +145,11 @@ def check_conversion(unit, material):
     if count:
         return True
 
-    cursor.execute("SELECT nazev, genitiv FROM jednotky WHERE jednotkaID=?", (unit,))
-    row = cursor.fetchone()
-    unit_genitiv = row[1] if row[1] is not None else row[0]
+    cursor.execute("SELECT COALESCE(genitiv, nazev) FROM jednotky WHERE jednotkaID=?", (unit,))
+    unit_genitiv = cursor.fetchone()[0]
 
-    cursor.execute("SELECT s.nazev, s.genitiv, j.nazev, j.genitiv FROM suroviny s LEFT JOIN jednotky j USING (jednotkaID) WHERE surovinaID=?", (material,))
-    row = cursor.fetchone()
-    material_genitiv = row[1] if row[1] is not None else row[0]
-    basic_unit_genitiv = row[3] if row[3] is not None else row[2]
+    cursor.execute("SELECT COALESCE(s.genitiv, s.nazev), COALESCE(j.genitiv, j.nazev) FROM suroviny s LEFT JOIN jednotky j USING (jednotkaID) WHERE surovinaID=?", (material,))
+    material_genitiv, basic_unit_genitiv = cursor.fetchone()
 
     msg = "Prosím zadejte kolik {} {} je potřeba k získání 1 {} {}: ".format(unit_genitiv, material_genitiv, basic_unit_genitiv, material_genitiv)
 
@@ -229,16 +236,103 @@ def add_recipe():
     cursor.execute("INSERT INTO recepty (nazev, postup) VALUES (?, ?)", (recipe_name, description))
     recipe_id = cursor.lastrowid
 
-    ingredients_insert = [(recipe_id) + ing for ing in ingredients]
+    ingredients_insert = [(recipe_id,) + ing for ing in ingredients]
     cursor.executemany("INSERT INTO ingredience (receptID, surovinaID, mnozstvi, jednotkaID) VALUES (?, ?, ?, ?)", ingredients_insert)
 
     print("Recept byl úspěšně vložen")
+
+def list_recipes():
+    cursor = CONN.cursor()
+    cursor.execute("SELECT receptID, nazev FROM recepty")
+    recipes = cursor.fetchall()
+    print('\n'.join([': '.join(map(str, x)) for x in recipes]))
+
+def find_best_unit_fit(material_id, amount, accurate):
+    cursor = CONN.cursor()
+    cursor.execute(
+            "SELECT j.nazev, COALESCE(j.plural, j.nazev), COALESCE(j.genitiv, j.nazev), p.multiplikator "
+            "FROM prevody p "
+            "LEFT JOIN jednotky j USING (jednotkaID) "
+            "WHERE p.surovinaID=? AND j.presna=? ",
+            (material_id,accurate)
+            )
+    ingredients = cursor.fetchall()
+
+    best_amount = None
+    best_fit = None
+    for name, plural, genitiv, multiplier in ingredients:
+        this_amount = amount * multiplier
+        if (
+                best_amount is None
+                or best_amount < 1 and this_amount > best_amount
+                or this_amount > 1 and this_amount < best_amount
+            ):
+            best_amount = this_amount
+            print_amount = "{0:.3g}".format(this_amount)
+            case_amount = int(print_amount.split(".")[-1])
+            if case_amount == 1:
+                best_fit = print_amount + ' ' + name
+            elif case_amount in [2,3,4]:
+                best_fit = print_amount + ' ' + plural
+            else:
+                best_fit = print_amount + ' ' + genitiv
+
+    return best_fit
+
+def show_recipe():
+
+    recipes = get_recipes_names_to_ids()
+    recipe = ' '.join(sys.argv[2:])
+    try:
+        recipe = int(recipe)
+        if recipe not in recipes.values():
+            print("Zadaný recept neexistuje")
+            return
+    except ValueError:
+        recipe = resolve_recipe(recipe)
+        if not recipe:
+            return
+
+    cursor = CONN.cursor()
+    cursor.execute(
+            "SELECT s.surovinaID, s.nazev, s.genitiv, i.mnozstvi, p.multiplikator "
+            "FROM ingredience i "
+            "LEFT JOIN suroviny s USING (surovinaID) "
+            "LEFT JOIN prevody p USING (jednotkaID, surovinaID) "
+            "WHERE i.receptID=? "
+            , (recipe,)
+            )
+    ingredients = cursor.fetchall()
+
+    for ing_id, ing_name, ing_genitiv, ing_count, ing_mult in ingredients:
+        if not ing_genitiv:
+            ing_genitiv = ing_name
+
+        ing_amount = ing_count / ing_mult
+        acc_fit = find_best_unit_fit(ing_id, ing_amount, True)
+        inacc_fit = find_best_unit_fit(ing_id, ing_amount, False)
+
+        s = ""
+        if acc_fit:
+            s += acc_fit + ' '
+        if inacc_fit:
+            s += '(' + inacc_fit + ') '
+        s += ing_genitiv
+        print(s)
+
+    cursor.execute("SELECT postup FROM recepty WHERE receptID=?", (recipe,))
+    desc = cursor.fetchone()[0]
+    print(desc)
 
 if __name__ == "__main__":
 
     actions = {
             'add': add_recipe,
             'add_recipe': add_recipe,
+            'list': list_recipes,
+            'list_recipes': list_recipes,
+            'show': show_recipe,
+            'show_recipe': show_recipe,
             }
 
     if len(sys.argv) > 1 and sys.argv[1] in actions:
