@@ -98,7 +98,10 @@ def create_material():
 
     cursor = CONN.cursor()
     cursor.execute("INSERT INTO suroviny (jednotkaID, nazev, genitiv) VALUES (?, ?, ?)", (base_unit, name, genitiv))
-    return cursor.lastrowid
+    material_id = cursor.lastrowid
+
+    cursor.execute("INSERT INTO prevody (jednotkaID, surovinaID, multiplikator) VALUES (?, ?, ?)", (base_unit, material_id, 1))
+    return material_id
 
 def resolve_string(string, strings, fallback=None):
     if string in strings:
@@ -168,6 +171,38 @@ def check_conversion(unit, material):
     cursor.execute("INSERT INTO prevody (jednotkaID, surovinaID, multiplikator) VALUES (?, ?, ?)", (unit, material, conversion))
 
     return True
+
+def add_conversions():
+    print("Na každém řádku zadejte kolik jednotek suroviny je potřeba k získání příslušné základní jednotky.")
+
+    try:
+        while True:
+            row = input()
+            if not row:
+                break
+
+            try:
+                (count, unit, *name) = raw_inp = shlex.split(row)
+                if not name:
+                    raise ValueError
+                count = float(count)
+            except ValueError:
+                print("Špatný vstup ", raw_inp, ", přeskakuji...")
+                continue
+            name = ' '.join(name)
+
+            unit = resolve_unit(unit)
+            if unit is None:
+                continue
+
+            material = resolve_material(name)
+            if material is None:
+                continue
+
+            cursor = CONN.cursor()
+            CONN.execute("INSERT OR REPLACE INTO prevody (jednotkaID, surovinaID, multiplikator) VALUES (?, ?, ?)", (unit, material, count))
+    except EOFError:
+        pass
 
 def add_recipe():
     cursor = CONN.cursor()
@@ -282,7 +317,14 @@ def find_best_unit_fit(material_id, amount, accurate):
 def show_recipe():
 
     recipes = get_recipes_names_to_ids()
-    recipe = ' '.join(sys.argv[2:])
+    argv = sys.argv[2:]
+    if argv[0].isdigit() and len(argv) > 1:
+        rations = int(argv[0])
+        recipe = ' '.join(argv[1:])
+    else:
+        rations = 1
+        recipe = ' '.join(argv)
+
     try:
         recipe = int(recipe)
         if recipe not in recipes.values():
@@ -295,20 +337,19 @@ def show_recipe():
 
     cursor = CONN.cursor()
     cursor.execute(
-            "SELECT s.surovinaID, s.nazev, s.genitiv, i.mnozstvi, p.multiplikator "
+            "SELECT s.surovinaID, s.nazev, s.genitiv, :rations * i.mnozstvi / p.multiplikator "
             "FROM ingredience i "
             "LEFT JOIN suroviny s USING (surovinaID) "
             "LEFT JOIN prevody p USING (jednotkaID, surovinaID) "
-            "WHERE i.receptID=? "
-            , (recipe,)
+            "WHERE i.receptID=:recipe "
+            , {'rations': rations, 'recipe': recipe}
             )
     ingredients = cursor.fetchall()
 
-    for ing_id, ing_name, ing_genitiv, ing_count, ing_mult in ingredients:
+    for ing_id, ing_name, ing_genitiv, ing_amount in ingredients:
         if not ing_genitiv:
             ing_genitiv = ing_name
 
-        ing_amount = ing_count / ing_mult
         acc_fit = find_best_unit_fit(ing_id, ing_amount, True)
         inacc_fit = find_best_unit_fit(ing_id, ing_amount, False)
 
@@ -335,6 +376,7 @@ if __name__ == "__main__":
             'list_recipes': list_recipes,
             'show': show_recipe,
             'show_recipe': show_recipe,
+            'add_conversion': add_conversions,
             }
 
     if len(sys.argv) > 1 and sys.argv[1] in actions:
