@@ -1,7 +1,9 @@
 CREATE TABLE "recepty" (
 	"receptID" INTEGER PRIMARY KEY AUTOINCREMENT,
 	"nazev" TEXT NOT NULL,
-	"postup" TEXT DEFAULT NULL
+	"postup" TEXT DEFAULT NULL,
+
+	UNIQUE("nazev") ON CONFLICT ABORT
 );
 
 CREATE TABLE "jednotky" (
@@ -9,7 +11,9 @@ CREATE TABLE "jednotky" (
 	"nazev" TEXT NOT NULL,
 	"plural" TEXT DEFAULT NULL,
 	"genitiv" DEFAULT NULL,
-	"presna" BOOLEAN NOT NULL DEFAULT 1
+	"presna" BOOLEAN NOT NULL DEFAULT 1,
+
+	UNIQUE("nazev") ON CONFLICT ABORT
 );
 
 CREATE TABLE "suroviny" (
@@ -18,7 +22,9 @@ CREATE TABLE "suroviny" (
 	"nazev" TEXT NOT NULL,
 	"genitiv" TEXT DEFAULT NULL,
 
-	FOREIGN KEY("jednotkaID") REFERENCES "jednotky"("jednotkaID")
+	FOREIGN KEY("jednotkaID") REFERENCES "jednotky"("jednotkaID"),
+
+	UNIQUE("nazev") ON CONFLICT ABORT
 );
 
 CREATE TABLE "ingredience" (
@@ -40,7 +46,9 @@ CREATE TABLE "prevody" (
 	"multiplikator" DECIMAL NOT NULL,
 
 	FOREIGN KEY("jednotkaID") REFERENCES "jednotky"("jednotkaID"),
-	FOREIGN KEY("surovinaID") REFERENCES "suroviny"("surovinaID")
+	FOREIGN KEY("surovinaID") REFERENCES "suroviny"("surovinaID"),
+
+	UNIQUE("jednotkaID", "surovinaID") ON CONFLICT ABORT
 );
 
 CREATE TABLE "alternativni_suroviny" (
@@ -48,7 +56,9 @@ CREATE TABLE "alternativni_suroviny" (
 	"surovinaID" INTEGER NOT NULL,
 	"nazev" TEXT NOT NULL,
 
-	FOREIGN KEY("surovinaID") REFERENCES "suroviny"("surovinaID")
+	FOREIGN KEY("surovinaID") REFERENCES "suroviny"("surovinaID"),
+
+	UNIQUE("nazev") ON CONFLICT ABORT
 );
 
 CREATE TABLE alternativni_jednotky (
@@ -56,5 +66,7 @@ CREATE TABLE alternativni_jednotky (
 	"jednotkaID" INTEGER NOT NULL,
 	"nazev" TEXT NOT NULL,
 
-	FOREIGN KEY("jednotkaID") REFERENCES "jednotky"("jednotkaID")
+	FOREIGN KEY("jednotkaID") REFERENCES "jednotky"("jednotkaID"),
+
+	UNIQUE("nazev") ON CONFLICT ABORT
 );
